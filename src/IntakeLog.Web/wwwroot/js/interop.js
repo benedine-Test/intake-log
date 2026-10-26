@@ -8,6 +8,14 @@ window.intakeLog = {
   persist: async () =>
     navigator.storage && navigator.storage.persist ? await navigator.storage.persist() : false,
 
+  // Tell Blazor when the app comes back to the foreground or back online, so it can sync.
+  watchForeground: dotnetRef => {
+    const ping = () => dotnetRef.invokeMethodAsync("OnForeground").catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ping(); });
+    window.addEventListener("online", ping);
+    window.addEventListener("focus", ping);
+  },
+
   download: (fileName, text) => {
     const blob = new Blob([text], { type: "application/json" });
     const url = URL.createObjectURL(blob);

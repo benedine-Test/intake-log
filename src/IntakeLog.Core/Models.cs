@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace IntakeLog.Core;
 
 public enum Sex { Female, Male }
@@ -22,6 +24,9 @@ public sealed class Profile
 
     /// <summary>False until the user has reviewed and saved the plan once.</summary>
     public bool Confirmed { get; set; }
+
+    /// <summary>When this profile was last changed, on any device. Used for sync.</summary>
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 /// <summary>A food that can be added in one tap (preset or saved by the user).</summary>
@@ -64,7 +69,10 @@ public sealed class DayLog
     public int? Steps { get; set; }
     public double? WeightKg { get; set; }
 
-    public bool HasFood => Foods.Count > 0;
+    /// <summary>When this day was last changed, on any device. Used for sync.</summary>
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonIgnore] public bool HasFood => Foods.Count > 0;
 }
 
 /// <summary>Everything the app stores. Serialized as one JSON document.</summary>
@@ -73,7 +81,11 @@ public sealed class AppData
     public int Version { get; set; } = 1;
     public Profile Profile { get; set; } = new();
     public List<FoodItem> SavedFoods { get; set; } = [];
+    public DateTimeOffset SavedFoodsUpdatedAt { get; set; }
     public List<DayLog> Days { get; set; } = [];
+
+    /// <summary>Local-only bookkeeping for syncing with the server.</summary>
+    public SyncState Sync { get; set; } = new();
 
     public DayLog? Find(DateOnly date) => Days.FirstOrDefault(d => d.Date == date);
 
@@ -90,7 +102,18 @@ public sealed class AppData
     }
 
     /// <summary>Most recent logged weight, or the start weight if none.</summary>
+    [JsonIgnore]
     public double CurrentWeightKg =>
         Days.Where(d => d.WeightKg is not null).OrderBy(d => d.Date).LastOrDefault()?.WeightKg
         ?? Profile.StartWeightKg;
+
+    /// <summary>Stamp an item as changed now and queue it for upload.</summary>
+    public void MarkChanged(string key, DateTimeOffset now)
+    {
+        if (key == SyncKeys.Profile) Profile.UpdatedAt = now;
+        else if (key == SyncKeys.Foods) SavedFoodsUpdatedAt = now;
+        else if (SyncKeys.TryParseDay(key, out var date)) GetOrCreate(date).UpdatedAt = now;
+        else throw new ArgumentException($"Unknown sync key '{key}'.", nameof(key));
+        Sync.Pending.Add(key);
+    }
 }
