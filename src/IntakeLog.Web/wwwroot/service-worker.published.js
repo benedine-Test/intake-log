@@ -37,8 +37,15 @@ async function onActivate(event) {
         .map(key => caches.delete(key)));
 }
 
+// Sign-in and the sync API must always reach the server, never the offline cache.
+const alwaysNetwork = [ /^\/\.auth\//, /^\/api\// ];
+
 async function onFetch(event) {
     let cachedResponse = null;
+    const path = new URL(event.request.url).pathname;
+    if (alwaysNetwork.some(pattern => pattern.test(path))) {
+        return fetch(event.request);
+    }
     if (event.request.method === 'GET') {
         // For all navigation requests, try to serve index.html from cache,
         // unless that request is for an offline resource.

@@ -5,7 +5,8 @@ namespace IntakeLog.Web.Services;
 
 /// <summary>
 /// Holds the app's data in memory and persists it to the browser's localStorage
-/// as one JSON document. Components subscribe to <see cref="Changed"/> to re-render.
+/// as one JSON document. The device copy is always the one the UI reads and writes;
+/// <see cref="SyncService"/> exchanges changes with the server in the background.
 /// </summary>
 public sealed class AppState(IJSRuntime js)
 {
@@ -17,7 +18,11 @@ public sealed class AppState(IJSRuntime js)
     public DateOnly SelectedDate { get; set; } = DateOnly.FromDateTime(DateTime.Now);
     public Meal SelectedMeal { get; set; } = DefaultMeal();
 
+    /// <summary>Any change, local or downloaded: re-render.</summary>
     public event Action? Changed;
+
+    /// <summary>A change made on this device: queue an upload.</summary>
+    public event Action? LocalChanged;
 
     public static DateOnly Today => DateOnly.FromDateTime(DateTime.Now);
 
@@ -49,11 +54,17 @@ public sealed class AppState(IJSRuntime js)
         Changed?.Invoke();
     }
 
-    /// <summary>Apply a change, then save and notify.</summary>
-    public async Task UpdateAsync(Action<AppData> change)
+    /// <summary>
+    /// Apply a change made on this device, stamp the changed items (see <see cref="SyncKeys"/>)
+    /// so they upload, then save.
+    /// </summary>
+    public async Task UpdateAsync(Action<AppData> change, params string[] changedKeys)
     {
         change(Data);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var key in changedKeys) Data.MarkChanged(key, now);
         await SaveAsync();
+        LocalChanged?.Invoke();
     }
 
     public async Task SaveAsync()
@@ -84,8 +95,13 @@ public sealed class AppState(IJSRuntime js)
         catch (Exception) { return "That file isn't an Intake Log backup. Choose a .json file exported from this app."; }
 
         if (imported is null) return "The backup file is empty.";
+
+        // Treat the restored data as a device that has never synced: its items upload,
+        // and wherever the server holds a newer copy, the newer copy wins.
+        imported.Sync = new SyncState();
         Data = imported;
         await SaveAsync();
+        LocalChanged?.Invoke();
         return null;
     }
 }

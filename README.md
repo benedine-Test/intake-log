@@ -1,6 +1,6 @@
 # Intake Log
 
-A calorie, protein, exercise and weight tracker built for quick logging of Singapore food. It's a Blazor WebAssembly PWA on .NET 10: it runs entirely in the browser, installs to an iPhone home screen, works offline, and hosts free on GitHub Pages.
+A calorie, protein, exercise and weight tracker built for quick logging of Singapore food. It's a Blazor WebAssembly PWA on .NET 10 with an Azure Functions API: it installs to an iPhone home screen, works offline, and syncs between your phone and laptop through Azure Static Web Apps and Table Storage.
 
 <img src="docs/today.png" alt="Today screen" width="320">
 
@@ -13,46 +13,91 @@ A calorie, protein, exercise and weight tracker built for quick logging of Singa
 - **Suggestions** based on the day: how long to walk off an overage, low protein, no movement yet, weekly 150-minute target, plateau warning.
 - **Trends**: 7-day average weight against goal, 14-day calorie bars, logging streak.
 - **Plan**: Mifflin-St Jeor BMR and TDEE, target held at a 1,200 kcal (female) or 1,500 kcal (male) floor, estimated goal date.
+- **Sync** between devices after signing in with a Microsoft or GitHub account.
 - **Backup**: export and import all data as JSON.
 
-## Where data lives
+## How sync works
 
-Everything is stored in the browser's `localStorage` on one device; there is no server. Use **My plan → Export backup** regularly and **Import backup** to move devices.
-
-On iPhone, add the app to the Home Screen (Safari → Share → Add to Home Screen). Safari can clear storage for websites you haven't visited in a while, and installed web apps are treated more like apps.
+- Every device keeps a full copy in `localStorage` and works offline. Logging never waits for the network.
+- Each day, the profile and the saved-food list sync separately and carry their own edit time. Where two copies differ, **the newer edit wins**. If you edit the same day on two devices before they sync, the later edit replaces the earlier one for that day.
+- Changes upload 2 seconds after you make them. Downloads happen at start-up, when the app returns to the foreground, when the network comes back, and every 3 minutes.
+- The API only accepts signed-in users, and each user's rows are stored under their own partition. Set `ALLOWED_USERS` so only your account can use it.
 
 ## Project layout
 
 ```
 IntakeLog.slnx
-├─ src/IntakeLog.Core          Models, calculations, presets, suggestions (no UI, fully testable)
+├─ src/IntakeLog.Core          Models, calculations, presets, suggestions, sync merge rules (no UI)
 ├─ src/IntakeLog.Web           Blazor WebAssembly PWA
 │  ├─ Pages/                   Home (Today), Trends, PlanPage
 │  ├─ Components/              FactsPanel, WeightChart, CalorieChart, StateComponent
-│  ├─ Services/AppState.cs     In-memory state + localStorage persistence
-│  └─ wwwroot/js/interop.js    localStorage and file download helpers
-├─ tests/IntakeLog.Core.Tests  xUnit tests for calculations and insights
-└─ .github/workflows/deploy.yml  Test, publish and deploy to GitHub Pages
+│  ├─ Services/AppState.cs     Device copy + localStorage persistence
+│  ├─ Services/SyncService.cs  Sign-in status, upload/download, retry
+│  └─ wwwroot/staticwebapp.config.json  Routes, auth rules, API runtime
+├─ src/IntakeLog.Api           Azure Functions (isolated, .NET 10): GET/POST /api/sync
+├─ tests/IntakeLog.Core.Tests  Calculations, insights, sync merge
+├─ tests/IntakeLog.Api.Tests   Auth header parsing, server merge, Table Storage
+└─ .github/workflows/azure-static-web-apps.yml  Test, publish, deploy
 ```
+
+## Set up Azure (one time, about 15 minutes)
+
+Everything below runs on free or near-free tiers. Expect well under US$1 a month for Table Storage at this size.
+
+### 1. Storage account
+
+1. In the Azure portal: **Create a resource → Storage account**.
+2. Region: **Southeast Asia**. Performance: **Standard**. Redundancy: **LRS**.
+3. Once created, open it → **Security + networking → Access keys** → copy **Connection string** for key1.
+
+### 2. Static Web App
+
+1. **Create a resource → Static Web App**.
+2. Plan: **Free**. Region: **East Asia** (closest available).
+3. Deployment details: Source **Other**. (The GitHub workflow in this repo deploys it, so the portal shouldn't create its own.)
+4. Once created: **Overview → Manage deployment token** → copy the token.
+5. **Settings → Environment variables** → add:
+   - `TABLES_CONNECTION_STRING` = the connection string from step 1
+   - `ALLOWED_USERS` = the email of your Microsoft account, or your GitHub username (comma-separate several)
+6. Click **Apply**.
+
+### 3. GitHub
+
+1. In the repository: **Settings → Secrets and variables → Actions → New repository secret**.
+2. Name `AZURE_STATIC_WEB_APPS_API_TOKEN`, value: the deployment token.
+3. Push to `main`, or run the workflow from the **Actions** tab.
+
+### 4. Each device
+
+1. Open the Static Web App URL (**Overview → URL**).
+2. On iPhone: Safari → Share → **Add to Home Screen**.
+3. **My plan → Sync → Sign in** with the same account on every device.
+
+Data already logged on a device uploads the first time it signs in.
 
 ## Run locally
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+UI only (no sync; data stays in the browser):
 
 ```bash
 dotnet test
 dotnet run --project src/IntakeLog.Web
 ```
 
-Then open the URL it prints. Open the folder in Visual Studio or Rider via `IntakeLog.slnx`.
+With sync, using local emulators:
 
-## Deploy to GitHub Pages
+```bash
+npm i -g azurite azure-functions-core-tools@4 @azure/static-web-apps-cli
+azurite --silent &                                   # local Table Storage
+cp src/IntakeLog.Api/local.settings.example.json src/IntakeLog.Api/local.settings.json
+(cd src/IntakeLog.Api && func start) &               # API on :7071
+dotnet publish src/IntakeLog.Web -c Release -o out/web
+swa start out/web/wwwroot --api-devserver-url http://localhost:7071   # app on :4280 with fake sign-in
+```
 
-1. Push this repository to GitHub with `main` as the default branch.
-2. In the repository, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-3. Push to `main` (or run the workflow manually from the **Actions** tab).
-
-The workflow runs the tests, sets the base path to `/<repo-name>/`, publishes, and deploys. The site appears at `https://<username>.github.io/<repo-name>/`.
+Run the Table Storage integration test against Azurite with `TABLES_TEST_CONNECTION=UseDevelopmentStorage=true dotnet test`.
 
 ## Changing the numbers
 

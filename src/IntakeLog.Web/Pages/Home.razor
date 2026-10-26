@@ -296,7 +296,7 @@
     private Task AddFood(FoodItem item)
     {
         query = "";
-        return State.UpdateAsync(d => d.GetOrCreate(Date).Foods.Add(FoodEntry.From(item, State.SelectedMeal)));
+        return State.UpdateAsync(d => d.GetOrCreate(Date).Foods.Add(FoodEntry.From(item, State.SelectedMeal)), SyncKeys.Day(Date));
     }
 
     private async Task AddCustom()
@@ -315,7 +315,7 @@
             if (save && !d.SavedFoods.Any(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 d.SavedFoods.Add(item);
             d.GetOrCreate(Date).Foods.Add(FoodEntry.From(item, State.SelectedMeal));
-        });
+        }, save ? [SyncKeys.Foods, SyncKeys.Day(Date)] : [SyncKeys.Day(Date)]);
         custom = new();
         customOpen = false;
     }
@@ -327,7 +327,7 @@
         if (item is null) return;
         item.Quantity = Math.Round((item.Quantity + delta) * 2) / 2;
         if (item.Quantity <= 0) day.Foods.Remove(item);
-    });
+    }, SyncKeys.Day(Date));
 
     private Task AddExercise()
     {
@@ -336,23 +336,23 @@
         if (minutes <= 0 && exKcal is null or <= 0) return Task.CompletedTask;
         var kcal = exKcal is > 0 ? exKcal.Value : Calculator.ExerciseKcal(act.Met, minutes, State.Data.CurrentWeightKg);
         exKcal = null;
-        return State.UpdateAsync(d => d.GetOrCreate(Date).Exercises.Add(new ExerciseEntry { Name = act.Name, Minutes = minutes, Kcal = kcal }));
+        return State.UpdateAsync(d => d.GetOrCreate(Date).Exercises.Add(new ExerciseEntry { Name = act.Name, Minutes = minutes, Kcal = kcal }), SyncKeys.Day(Date));
     }
 
     private Task RemoveExercise(string id) =>
-        State.UpdateAsync(d => d.GetOrCreate(Date).Exercises.RemoveAll(e => e.Id == id));
+        State.UpdateAsync(d => d.GetOrCreate(Date).Exercises.RemoveAll(e => e.Id == id), SyncKeys.Day(Date));
 
     private Task SetWeight(ChangeEventArgs e)
     {
         double? v = double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var x) && x is > 20 and < 300
             ? Math.Round(x, 2) : null;
-        return State.UpdateAsync(d => d.GetOrCreate(Date).WeightKg = v);
+        return State.UpdateAsync(d => d.GetOrCreate(Date).WeightKg = v, SyncKeys.Day(Date));
     }
 
     private Task SetSteps(ChangeEventArgs e)
     {
         int? v = int.TryParse(e.Value?.ToString(), out var x) && x >= 0 ? x : null;
-        return State.UpdateAsync(d => d.GetOrCreate(Date).Steps = v);
+        return State.UpdateAsync(d => d.GetOrCreate(Date).Steps = v, SyncKeys.Day(Date));
     }
 
     /// <summary>Tapping the current top glass empties it, so a mis-tap is easy to undo.</summary>
@@ -360,7 +360,7 @@
     {
         var day = d.GetOrCreate(Date);
         day.WaterGlasses = day.WaterGlasses == n ? n - 1 : n;
-    });
+    }, SyncKeys.Day(Date));
 
     private sealed class CustomFood
     {

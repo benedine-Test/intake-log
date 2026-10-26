@@ -1,0 +1,26 @@
+{
+  "routes": [
+    { "route": "/api/*", "allowedRoles": ["authenticated"] },
+    { "route": "/.auth/login/twitter", "statusCode": 404 }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/_framework/*", "/css/*", "/js/*", "*.{png,ico,json,webmanifest,js,css,wasm,dat,dll,pdb,blat}"]
+  },
+  "responseOverrides": {
+    "401": { "statusCode": 401 }
+  },
+  "mimeTypes": {
+    ".json": "application/json",
+    ".wasm": "application/wasm",
+    ".dat": "application/octet-stream",
+    ".webmanifest": "application/manifest+json"
+  },
+  "globalHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin"
+  },
+  "platform": {
+    "apiRuntime": "dotnet-isolated:10.0"
+  }
+}

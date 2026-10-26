@@ -1,11 +1,12 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject AppState State
+@inject SyncService Sync
 
 <div class="wrap">
     <header class="top">
         <h1>Intake Log</h1>
-        <span class="status">@StatusText</span>
+        <a class="status" href="plan#sync">@StatusText</a>
     </header>
 
     <nav class="tabs" aria-label="Sections">
@@ -25,17 +26,21 @@
 </div>
 
 @code {
-    private string StatusText =>
-        !State.Loaded ? "Loading…" :
-        State.StorageAvailable ? "Saved on this device" : "Not saving: browser storage is blocked";
+    private string StatusText => !State.Loaded ? "Loading…" : Sync.StatusText;
 
     protected override async Task OnInitializedAsync()
     {
         State.Changed += OnChanged;
+        Sync.Changed += OnChanged;
         await State.LoadAsync();
+        _ = Sync.StartAsync(); // runs in the background; the log is usable straight away
     }
 
     private void OnChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() => State.Changed -= OnChanged;
+    public void Dispose()
+    {
+        State.Changed -= OnChanged;
+        Sync.Changed -= OnChanged;
+    }
 }

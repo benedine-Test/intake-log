@@ -3,6 +3,7 @@
 @inject AiFoodService Ai
 
 <PageTitle>My plan · Intake Log</PageTitle>
+@{ RefreshDraftIfProfileReplaced(); }
 
 <section class="card">
     <h2>Your numbers</h2>
@@ -81,6 +82,45 @@
     }
 </section>
 
+<section class="card" id="sync">
+    <h2>Sync</h2>
+    @switch (Sync.Status)
+    {
+        case SyncStatus.Unavailable:
+            <p class="hint">Sync works when the app is hosted on Azure Static Web Apps. Here, your log is saved on this device only.</p>
+            break;
+        case SyncStatus.Checking:
+            <p class="hint">Checking sign-in…</p>
+            break;
+        case SyncStatus.SignedOut:
+            <p class="hint">Sign in to keep your phone and laptop in step. Use the same account on every device.</p>
+            <div class="inline wrap-row">
+                <button class="btn" @onclick='() => Sync.SignIn("aad")'>Sign in with Microsoft</button>
+                <button class="btn ghost" @onclick='() => Sync.SignIn("github")'>Sign in with GitHub</button>
+            </div>
+            break;
+        case SyncStatus.NotAllowed:
+            <p class="error">@(Sync.UserName ?? "This account") isn't on this app's allowed list. Sign out and use the account you set up for sync.</p>
+            <button class="btn ghost" @onclick="Sync.SignOut">Sign out</button>
+            break;
+        default:
+            <dl class="kv">
+                <dt>Signed in as</dt><dd>@(Sync.UserName ?? "–")</dd>
+                <dt>Status</dt><dd>@Sync.StatusText</dd>
+                <dt>Waiting to upload</dt><dd class="num">@Sync.PendingCount</dd>
+            </dl>
+            @if (Sync.LastError is not null && Sync.Status == SyncStatus.Offline)
+            {
+                <p class="hint">@Sync.LastError Your changes are safe on this device.</p>
+            }
+            <div class="inline wrap-row">
+                <button class="btn" disabled="@(Sync.Status == SyncStatus.Syncing)" @onclick="Sync.SyncNowAsync">Sync now</button>
+                <button class="btn ghost" @onclick="Sync.SignOut">Sign out</button>
+            </div>
+            break;
+    }
+</section>
+
 <section class="card">
     <h2>AI food search</h2>
     <p class="hint">
@@ -109,7 +149,7 @@
 
 <section class="card">
     <h2>Backup</h2>
-    <p class="hint">Your log lives only in this browser. Export a backup now and then, and import it to move to a new phone or laptop.</p>
+    <p class="hint">A copy of everything as a file. Useful before switching accounts, or if you ever stop using sync.</p>
     <div class="inline wrap-row">
         <button class="btn" @onclick="State.ExportAsync">Export backup (.json)</button>
         <label class="btn ghost file">
@@ -148,9 +188,13 @@
     private PlanResult Plan => State.Plan;
     private double WalkPace => Calculator.ExerciseKcal(4.3, 30, Plan.WeightKg) * 7 / Calculator.KcalPerKg;
 
-    protected override void OnInitialized()
+    private Profile? shownProfile;
+
+    /// <summary>When another device's profile arrives through sync, show it instead of the old values.</summary>
+    private void RefreshDraftIfProfileReplaced()
     {
-        base.OnInitialized();
+        if (ReferenceEquals(shownProfile, P)) return;
+        shownProfile = P;
         draft = Copy(P);
     }
 
@@ -183,11 +227,11 @@
         error = null;
         draft.Confirmed = true;
         var updated = Copy(draft);
-        await State.UpdateAsync(d => d.Profile = updated);
+        await State.UpdateAsync(d => d.Profile = updated, SyncKeys.Profile);
         saved = true;
     }
 
-    private Task RemoveSaved(FoodItem f) => State.UpdateAsync(d => d.SavedFoods.Remove(f));
+    private Task RemoveSaved(FoodItem f) => State.UpdateAsync(d => d.SavedFoods.Remove(f), SyncKeys.Foods);
 
     private async Task Import(InputFileChangeEventArgs e)
     {
