@@ -88,6 +88,18 @@ input[type=text], input[type=number], input[type=date], select {
 .results button:last-child { border-bottom: 0; }
 .results button:hover { background: var(--soft); }
 .results small { color: var(--muted); }
+.ai { display: flex; flex-direction: column; gap: 8px; }
+.ai-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; font-weight: 700; }
+.aifood { border: 1px solid var(--rule); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.aifood-top { display: flex; justify-content: space-between; gap: 8px; }
+.aifood .n { min-width: 0; overflow-wrap: anywhere; }
+.aifood .n small { display: block; color: var(--muted); font-size: 12px; }
+.aifood .kc { font-weight: 600; font-size: 20px; text-align: right; line-height: 1; }
+.aifood .kc small { display: block; font-size: 11px; color: var(--muted); }
+.nf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 8px; margin: 0; font-size: 13px; }
+.nf div { display: flex; justify-content: space-between; gap: 4px; border-bottom: 1px dotted var(--rule); }
+.nf dt { color: var(--muted); }
+.nf dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 1px solid var(--rule); background: var(--bg); border-radius: 999px; padding: 5px 10px; font-size: 13px; }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }

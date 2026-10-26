@@ -4,6 +4,8 @@ window.intakeLog = {
 
   save: (key, value) => localStorage.setItem(key, value),
 
+  remove: key => localStorage.removeItem(key),
+
   // Ask the browser to keep this site's storage instead of evicting it under pressure.
   persist: async () =>
     navigator.storage && navigator.storage.persist ? await navigator.storage.persist() : false,
