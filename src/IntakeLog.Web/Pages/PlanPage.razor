@@ -1,0 +1,178 @@
+@page "/plan"
+@inherits StateComponent
+
+<PageTitle>My plan · Intake Log</PageTitle>
+
+<section class="card">
+    <h2>Your numbers</h2>
+    <EditForm Model="draft" OnValidSubmit="Save" class="stack">
+        <div class="grid3">
+            <label class="f">Sex
+                <InputSelect id="p-sex" @bind-Value="draft.Sex">
+                    <option value="@Sex.Female">Female</option>
+                    <option value="@Sex.Male">Male</option>
+                </InputSelect>
+            </label>
+            <label class="f">Age <InputNumber id="p-age" @bind-Value="draft.Age" /></label>
+            <label class="f">Height (cm) <InputNumber id="p-height" @bind-Value="draft.HeightCm" /></label>
+        </div>
+        <div class="grid3">
+            <label class="f">Start (kg) <InputNumber id="p-start" @bind-Value="draft.StartWeightKg" step="0.05" /></label>
+            <label class="f">Goal (kg) <InputNumber id="p-goal" @bind-Value="draft.GoalWeightKg" step="0.05" /></label>
+            <label class="f">Start date <InputDate id="p-date" @bind-Value="draft.StartDate" /></label>
+        </div>
+        <label class="f">Day-to-day activity (not counting logged exercise)
+            <InputSelect id="p-activity" @bind-Value="draft.ActivityFactor">
+                <option value="1.2">Desk job, little walking</option>
+                <option value="1.375">Some walking, on feet a bit</option>
+                <option value="1.55">On feet most of the day</option>
+            </InputSelect>
+        </label>
+        <label class="f">Pace
+            <InputSelect id="p-pace" @bind-Value="draft.PaceKgPerWeek">
+                <option value="0.25">0.25 kg/week (easiest to keep)</option>
+                <option value="0.5">0.5 kg/week (recommended)</option>
+                <option value="0.75">0.75 kg/week (hard)</option>
+            </InputSelect>
+        </label>
+        @if (error is not null) { <p class="error">@error</p> }
+        <button type="submit" class="btn">Save plan</button>
+        @if (saved) { <p class="ok">Plan saved.</p> }
+    </EditForm>
+</section>
+
+<section class="card">
+    <h2>What this plan means</h2>
+    <dl class="kv">
+        <dt>Weight used</dt><dd class="num">@Plan.WeightKg.ToString("0.00", Inv) kg</dd>
+        <dt>Calories at rest (BMR)</dt><dd class="num">@Math.Round(Plan.Bmr)</dd>
+        <dt>Maintenance (TDEE)</dt><dd class="num">@Math.Round(Plan.Tdee)</dd>
+        <dt>Daily target</dt><dd class="num"><b>@Plan.TargetKcal</b></dd>
+        <dt>Protein target</dt><dd class="num">@Plan.ProteinTargetG g</dd>
+        <dt>Real pace</dt><dd class="num">@Plan.RealPaceKgPerWeek.ToString("0.00", Inv) kg/week</dd>
+        <dt>Estimated goal date</dt><dd class="num">@(Plan.EstimatedGoalDate?.ToString("d MMM yyyy", Inv) ?? "–")</dd>
+        <dt>BMI at goal</dt><dd class="num">@Calculator.BmiAt(P.GoalWeightKg, P.HeightCm).ToString("0.0", Inv)</dd>
+    </dl>
+    <p class="foot">
+        @if (Plan.HeldAtFloor)
+        {
+            @($"Your chosen pace would put you below {Calculator.FloorFor(P.Sex)} kcal, so the target is held there. To go faster, add activity rather than eating less: 30 minutes of brisk walking daily adds about {WalkPace:0.00} kg/week.")
+        }
+        else
+        {
+            @("The target recalculates as your logged weight drops, so it gets slightly lower over time.")
+        }
+    </p>
+</section>
+
+<section class="card">
+    <h2>My saved foods</h2>
+    @if (State.Data.SavedFoods.Count == 0)
+    {
+        <p class="empty">Foods you add with “Save to my foods” appear here.</p>
+    }
+    @foreach (var f in State.Data.SavedFoods)
+    {
+        <div class="item">
+            <div class="n">@f.Name<small class="num">@f.Kcal kcal · @f.Protein g protein</small></div>
+            <div class="step"><button @onclick="() => RemoveSaved(f)" aria-label="Delete @f.Name">✕</button></div>
+        </div>
+    }
+</section>
+
+<section class="card">
+    <h2>Backup</h2>
+    <p class="hint">Your log lives only in this browser. Export a backup now and then, and import it to move to a new phone or laptop.</p>
+    <div class="inline wrap-row">
+        <button class="btn" @onclick="State.ExportAsync">Export backup (.json)</button>
+        <label class="btn ghost file">
+            Import backup
+            <InputFile id="import" accept=".json,application/json" OnChange="Import" />
+        </label>
+    </div>
+    @if (confirmImport is not null)
+    {
+        <div class="banner">
+            This replaces everything on this device with the backup (@confirmImport.Days.Count days logged).
+            <div class="inline wrap-row" style="margin-top:8px">
+                <button class="btn" @onclick="ConfirmImport">Replace my data</button>
+                <button class="btn ghost" @onclick="() => { confirmImport = null; pendingJson = null; }">Cancel</button>
+            </div>
+        </div>
+    }
+    @if (importMessage is not null) { <p class="@(importOk ? "ok" : "error")">@importMessage</p> }
+</section>
+
+<p class="foot">Hawker calorie figures are typical estimates; portions vary a lot. Targets use the Mifflin-St Jeor formula, which is an estimate too. Adjust using your weight trend after 3–4 weeks.</p>
+
+@code {
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    private Profile draft = new();
+    private string? error;
+    private bool saved;
+    private AppData? confirmImport;
+    private string? pendingJson;
+    private string? importMessage;
+    private bool importOk;
+
+    private Profile P => State.Data.Profile;
+    private PlanResult Plan => State.Plan;
+    private double WalkPace => Calculator.ExerciseKcal(4.3, 30, Plan.WeightKg) * 7 / Calculator.KcalPerKg;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        draft = Copy(P);
+    }
+
+    private static Profile Copy(Profile p) => new()
+    {
+        Sex = p.Sex, Age = p.Age, HeightCm = p.HeightCm, StartWeightKg = p.StartWeightKg,
+        GoalWeightKg = p.GoalWeightKg, StartDate = p.StartDate, ActivityFactor = p.ActivityFactor,
+        PaceKgPerWeek = p.PaceKgPerWeek, Confirmed = p.Confirmed
+    };
+
+    private async Task Save()
+    {
+        saved = false;
+        if (draft.Age is < 14 or > 90) { error = "Enter an age between 14 and 90."; return; }
+        if (draft.HeightCm is < 120 or > 220) { error = "Enter a height between 120 and 220 cm."; return; }
+        if (draft.GoalWeightKg <= 30 || draft.StartWeightKg <= 30) { error = "Enter start and goal weights in kg."; return; }
+        error = null;
+        draft.Confirmed = true;
+        var updated = Copy(draft);
+        await State.UpdateAsync(d => d.Profile = updated);
+        saved = true;
+    }
+
+    private Task RemoveSaved(FoodItem f) => State.UpdateAsync(d => d.SavedFoods.Remove(f));
+
+    private async Task Import(InputFileChangeEventArgs e)
+    {
+        importMessage = null;
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024));
+            pendingJson = await reader.ReadToEndAsync();
+            confirmImport = AppDataJson.Deserialize(pendingJson);
+            if (confirmImport is null) { importOk = false; importMessage = "The backup file is empty."; }
+        }
+        catch (Exception)
+        {
+            confirmImport = null;
+            importOk = false;
+            importMessage = "That file isn't an Intake Log backup. Choose a .json file exported from this app.";
+        }
+    }
+
+    private async Task ConfirmImport()
+    {
+        if (pendingJson is null) return;
+        var err = await State.ImportAsync(pendingJson);
+        importOk = err is null;
+        importMessage = err ?? "Backup restored.";
+        confirmImport = null;
+        pendingJson = null;
+        draft = Copy(P);
+    }
+}

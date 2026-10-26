@@ -1,0 +1,41 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AppState State
+
+<div class="wrap">
+    <header class="top">
+        <h1>Intake Log</h1>
+        <span class="status">@StatusText</span>
+    </header>
+
+    <nav class="tabs" aria-label="Sections">
+        <NavLink href="" Match="NavLinkMatch.All">Today</NavLink>
+        <NavLink href="trends">Trends</NavLink>
+        <NavLink href="plan">My plan</NavLink>
+    </nav>
+
+    @if (State.Loaded)
+    {
+        @Body
+    }
+    else
+    {
+        <p class="empty">Opening your log…</p>
+    }
+</div>
+
+@code {
+    private string StatusText =>
+        !State.Loaded ? "Loading…" :
+        State.StorageAvailable ? "Saved on this device" : "Not saving: browser storage is blocked";
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnChanged;
+        await State.LoadAsync();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => State.Changed -= OnChanged;
+}

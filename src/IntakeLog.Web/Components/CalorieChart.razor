@@ -1,0 +1,62 @@
+@* Calories eaten per day for the last 14 days against the base target. *@
+<div class="chartbox">
+    <svg viewBox="0 0 @W @H" width="100%" role="img" aria-label="Calories per day, last 14 days">
+        @for (var v = 0; v <= top; v += 500)
+        {
+            <g>
+                <line x1="@L" x2="@(W - R)" y1="@F(Y(v))" y2="@F(Y(v))" class="grid" />
+                <text x="@(L - 6)" y="@F(Y(v) + 3)" text-anchor="end">@v</text>
+            </g>
+        }
+        @for (var i = 0; i < days.Count; i++)
+        {
+            var d = days[i];
+            var x = L + i * Bw + Bw * 0.18;
+            var w = Bw * 0.64;
+            if (d.Logged)
+            {
+                <rect x="@F(x)" y="@F(Y(d.Kcal))" width="@F(w)" height="@F(Y(0) - Y(d.Kcal))" rx="2" class="@(d.Kcal > d.Budget ? "bar-over" : "bar-ok")" />
+            }
+            else
+            {
+                <rect x="@F(x)" y="@F(Y(0) - 2)" width="@F(w)" height="2" class="bar-none" />
+            }
+            if (i % 2 == 0)
+            {
+                <g><text x="@F(x + w / 2)" y="@(H - 8)" text-anchor="middle">@d.Date.Day</text></g>
+            }
+        }
+        <line x1="@L" x2="@(W - R)" y1="@F(Y(Target))" y2="@F(Y(Target))" class="target" />
+        <text x="@(W - R)" y="@F(Y(Target) - 4)" text-anchor="end">target @Target</text>
+    </svg>
+</div>
+<p class="foot">Orange bars went over that day's budget. Flat grey marks are days with nothing logged.</p>
+
+@code {
+    [Parameter, EditorRequired] public AppData Data { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanResult Plan { get; set; } = default!;
+    [Parameter, EditorRequired] public DateOnly Today { get; set; }
+
+    private const int W = 520, H = 180, L = 40, R = 10, T = 10, B = 24;
+    private const double Bw = (W - L - R) / 14.0;
+    private record struct Bar(DateOnly Date, double Kcal, int Budget, bool Logged);
+    private List<Bar> days = [];
+    private int top;
+    private int Target => Plan.TargetKcal;
+
+    protected override void OnParametersSet()
+    {
+        days = Enumerable.Range(0, 14).Select(i =>
+        {
+            var date = Today.AddDays(i - 13);
+            var log = Data.Find(date);
+            var t = Calculator.Totals(log);
+            return new Bar(date, t.Kcal, Calculator.Budget(Plan, t), log?.HasFood == true);
+        }).ToList();
+        var max = Math.Max(Target * 1.4, days.Max(d => d.Kcal));
+        top = (int)Math.Ceiling(max / 500) * 500;
+    }
+
+    private double Y(double v) => T + (1 - v / top) * (H - T - B);
+    private static string F(double v) => v.ToString("0.0", CultureInfo.InvariantCulture);
+}

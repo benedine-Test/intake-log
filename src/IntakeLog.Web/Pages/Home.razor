@@ -1,0 +1,289 @@
+﻿@page "/"
+@inherits StateComponent
+
+<PageTitle>Today · Intake Log</PageTitle>
+
+@if (!State.Data.Profile.Confirmed)
+{
+    <div class="banner">Check your numbers once under <a href="plan">My plan</a> and press Save. The targets below use them.</div>
+}
+
+<div class="daynav">
+    <button @onclick="() => Move(-1)" aria-label="Previous day">‹</button>
+    <div class="d">
+        @DayName
+        <small>@Date.ToString("d MMM yyyy", CultureInfo.InvariantCulture)</small>
+    </div>
+    <button @onclick="() => Move(1)" disabled="@(Date >= AppState.Today)" aria-label="Next day">›</button>
+</div>
+
+<FactsPanel Date="Date" Day="Day" Plan="State.Plan" />
+
+<section class="card">
+    <h2>What to do next</h2>
+    <ul class="sugg">
+        @foreach (var s in Insights.For(State.Data, Date, AppState.Today))
+        {
+            <li class="@(s.NeedsAttention ? "w" : "")">@s.Text</li>
+        }
+    </ul>
+</section>
+
+<section class="card">
+    <h2>Add food</h2>
+    <div class="chips" role="group" aria-label="Meal">
+        @foreach (var m in Enum.GetValues<Meal>())
+        {
+            <button class="chip" aria-pressed="@(m == State.SelectedMeal ? "true" : "false")" @onclick="() => State.SelectedMeal = m">@m</button>
+        }
+    </div>
+    <input id="food-search" type="text" placeholder="Search: chicken rice, kopi, egg…" autocomplete="off"
+           @bind="query" @bind:event="oninput" />
+    <div class="results">
+        @if (Results.Count == 0)
+        {
+            <p class="empty pad">No match. Use “Add something not on the list”.</p>
+        }
+        @foreach (var r in Results)
+        {
+            <button @onclick="() => AddFood(r.Item)">
+                <span>@r.Item.Name @if (r.Tag is not null) { <small>· @r.Tag</small> }</span>
+                <span class="num">@r.Item.Kcal</span>
+            </button>
+        }
+    </div>
+
+    <button class="link" @onclick="() => customOpen = !customOpen" aria-expanded="@(customOpen ? "true" : "false")">
+        @(customOpen ? "Hide custom food" : "Add something not on the list")
+    </button>
+    @if (customOpen)
+    {
+        <EditForm Model="custom" OnValidSubmit="AddCustom" class="stack">
+            <label class="f">Name <InputText id="c-name" @bind-Value="custom.Name" placeholder="e.g. Mum's fried bee hoon" /></label>
+            <div class="grid2">
+                <label class="f">Calories (kcal) <InputNumber id="c-kcal" @bind-Value="custom.Kcal" inputmode="numeric" /></label>
+                <label class="f">Protein (g) <InputNumber id="c-p" @bind-Value="custom.Protein" inputmode="decimal" /></label>
+            </div>
+            <div class="grid2">
+                <label class="f">Carbs (g), optional <InputNumber id="c-c" @bind-Value="custom.Carbs" inputmode="decimal" /></label>
+                <label class="f">Fat (g), optional <InputNumber id="c-f" @bind-Value="custom.Fat" inputmode="decimal" /></label>
+            </div>
+            <label class="check"><InputCheckbox id="c-save" @bind-Value="custom.SaveToMyFoods" /> Save to my foods for one-tap next time</label>
+            @if (customError is not null) { <p class="error">@customError</p> }
+            <button type="submit" class="btn">Add food</button>
+        </EditForm>
+    }
+</section>
+
+<section class="card">
+    <h2>Eaten</h2>
+    @if (Day is null || !Day.HasFood)
+    {
+        <p class="empty">Nothing yet for this day. Search above and tap to add.</p>
+    }
+    else
+    {
+        @foreach (var meal in Enum.GetValues<Meal>())
+        {
+            var items = Day.Foods.Where(f => f.Meal == meal).ToList();
+            if (items.Count == 0) continue;
+            <div class="meal">
+                <h3><span>@meal</span><span class="num">@Math.Round(items.Sum(f => f.Kcal * f.Quantity)) kcal</span></h3>
+                @foreach (var f in items)
+                {
+                    <div class="item">
+                        <div class="n">@f.Name<small class="num">@Math.Round(f.Kcal * f.Quantity) kcal · @Math.Round(f.Protein * f.Quantity) g protein</small></div>
+                        <div class="step">
+                            <button @onclick="() => ChangeQty(f.Id, -0.5)" aria-label="Less">−</button>
+                            <span class="num qty">×@f.Quantity.ToString(CultureInfo.InvariantCulture)</span>
+                            <button @onclick="() => ChangeQty(f.Id, 0.5)" aria-label="More">+</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</section>
+
+<section class="card">
+    <h2>Exercise</h2>
+    <div class="inline">
+        <label class="f">Activity
+            <select id="ex-type" @bind="activityIndex">
+                @for (var i = 0; i < Presets.Activities.Count; i++)
+                {
+                    <option value="@i">@Presets.Activities[i].Name</option>
+                }
+            </select>
+        </label>
+        <label class="f narrow">Minutes <input id="ex-min" type="number" min="1" inputmode="numeric" @bind="exMinutes" /></label>
+    </div>
+    <div class="inline">
+        <label class="f">Or kcal from your watch, optional <input id="ex-kcal" type="number" min="0" inputmode="numeric" placeholder="overrides estimate" @bind="exKcal" /></label>
+        <button class="btn" @onclick="AddExercise">Log</button>
+    </div>
+    @if (Day is null || Day.Exercises.Count == 0)
+    {
+        <p class="empty">No exercise logged.</p>
+    }
+    else
+    {
+        @foreach (var e in Day.Exercises)
+        {
+            <div class="item">
+                <div class="n">@e.Name<small class="num">@e.Minutes min · @Math.Round(e.Kcal) kcal</small></div>
+                <div class="step"><button @onclick="() => RemoveExercise(e.Id)" aria-label="Remove @e.Name">✕</button></div>
+            </div>
+        }
+    }
+</section>
+
+<section class="card">
+    <h2>Body &amp; habits</h2>
+    <div class="grid2">
+        <label class="f">Weight today (kg)
+            <input id="weight" type="number" step="0.05" inputmode="decimal" placeholder="from Zepp Life"
+                   value="@Day?.WeightKg" @onchange="SetWeight" />
+        </label>
+        <label class="f">Steps
+            <input id="steps" type="number" min="0" inputmode="numeric" value="@Day?.Steps" @onchange="SetSteps" />
+        </label>
+    </div>
+    <div>
+        <div class="hint">Water (250 ml glasses) · tap to fill</div>
+        <div class="water">
+            @for (var i = 1; i <= 10; i++)
+            {
+                var n = i;
+                <button class="@(n <= (Day?.WaterGlasses ?? 0) ? "on" : "")" @onclick="() => SetWater(n)" aria-label="@n glasses"></button>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    private string query = "";
+    private bool customOpen;
+    private string? customError;
+    private CustomFood custom = new();
+    private int activityIndex;
+    private int? exMinutes = 30;
+    private int? exKcal;
+
+    private DateOnly Date => State.SelectedDate;
+    private DayLog? Day => State.Data.Find(Date);
+
+    private string DayName =>
+        Date == AppState.Today ? "Today" :
+        Date == AppState.Today.AddDays(-1) ? "Yesterday" :
+        Date.DayOfWeek.ToString();
+
+    private sealed record Result(FoodItem Item, string? Tag);
+
+    /// <summary>Recent foods first, then saved foods, then presets; de-duplicated by name.</summary>
+    private List<Result> Results
+    {
+        get
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var all = new List<Result>();
+            foreach (var d in State.Data.Days.OrderByDescending(d => d.Date).Take(14))
+                foreach (var f in d.Foods)
+                    if (seen.Add(f.Name)) all.Add(new(new FoodItem(f.Name, f.Kcal, f.Protein, f.Carbs, f.Fat), "recent"));
+            foreach (var f in State.Data.SavedFoods)
+                if (seen.Add(f.Name)) all.Add(new(f, "mine"));
+            foreach (var f in Presets.Foods)
+                if (seen.Add(f.Name)) all.Add(new(f, null));
+
+            var q = query.Trim();
+            return q.Length == 0
+                ? all.Take(8).ToList()
+                : all.Where(r => r.Item.Name.Contains(q, StringComparison.OrdinalIgnoreCase)).Take(20).ToList();
+        }
+    }
+
+    private void Move(int days)
+    {
+        var next = Date.AddDays(days);
+        if (next <= AppState.Today) State.SelectedDate = next;
+    }
+
+    private Task AddFood(FoodItem item)
+    {
+        query = "";
+        return State.UpdateAsync(d => d.GetOrCreate(Date).Foods.Add(FoodEntry.From(item, State.SelectedMeal)));
+    }
+
+    private async Task AddCustom()
+    {
+        var name = custom.Name?.Trim() ?? "";
+        if (name.Length == 0 || custom.Kcal is null or <= 0)
+        {
+            customError = "Enter a name and calories.";
+            return;
+        }
+        customError = null;
+        var item = new FoodItem(name, custom.Kcal.Value, custom.Protein ?? 0, custom.Carbs ?? 0, custom.Fat ?? 0);
+        var save = custom.SaveToMyFoods;
+        await State.UpdateAsync(d =>
+        {
+            if (save && !d.SavedFoods.Any(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                d.SavedFoods.Add(item);
+            d.GetOrCreate(Date).Foods.Add(FoodEntry.From(item, State.SelectedMeal));
+        });
+        custom = new();
+        customOpen = false;
+    }
+
+    private Task ChangeQty(string id, double delta) => State.UpdateAsync(d =>
+    {
+        var day = d.GetOrCreate(Date);
+        var item = day.Foods.FirstOrDefault(f => f.Id == id);
+        if (item is null) return;
+        item.Quantity = Math.Round((item.Quantity + delta) * 2) / 2;
+        if (item.Quantity <= 0) day.Foods.Remove(item);
+    });
+
+    private Task AddExercise()
+    {
+        var act = Presets.Activities[activityIndex];
+        var minutes = exMinutes ?? 0;
+        if (minutes <= 0 && exKcal is null or <= 0) return Task.CompletedTask;
+        var kcal = exKcal is > 0 ? exKcal.Value : Calculator.ExerciseKcal(act.Met, minutes, State.Data.CurrentWeightKg);
+        exKcal = null;
+        return State.UpdateAsync(d => d.GetOrCreate(Date).Exercises.Add(new ExerciseEntry { Name = act.Name, Minutes = minutes, Kcal = kcal }));
+    }
+
+    private Task RemoveExercise(string id) =>
+        State.UpdateAsync(d => d.GetOrCreate(Date).Exercises.RemoveAll(e => e.Id == id));
+
+    private Task SetWeight(ChangeEventArgs e)
+    {
+        double? v = double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var x) && x is > 20 and < 300
+            ? Math.Round(x, 2) : null;
+        return State.UpdateAsync(d => d.GetOrCreate(Date).WeightKg = v);
+    }
+
+    private Task SetSteps(ChangeEventArgs e)
+    {
+        int? v = int.TryParse(e.Value?.ToString(), out var x) && x >= 0 ? x : null;
+        return State.UpdateAsync(d => d.GetOrCreate(Date).Steps = v);
+    }
+
+    /// <summary>Tapping the current top glass empties it, so a mis-tap is easy to undo.</summary>
+    private Task SetWater(int n) => State.UpdateAsync(d =>
+    {
+        var day = d.GetOrCreate(Date);
+        day.WaterGlasses = day.WaterGlasses == n ? n - 1 : n;
+    });
+
+    private sealed class CustomFood
+    {
+        public string? Name { get; set; }
+        public double? Kcal { get; set; }
+        public double? Protein { get; set; }
+        public double? Carbs { get; set; }
+        public double? Fat { get; set; }
+        public bool SaveToMyFoods { get; set; } = true;
+    }
+}

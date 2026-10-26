@@ -1,0 +1,41 @@
+@* Daily summary styled like a printed nutrition-facts label. *@
+<div class="facts">
+    <div class="ttl">Intake Facts</div>
+    <div class="sub">
+        <span>@ItemCount item@(ItemCount == 1 ? "" : "s") logged</span>
+        <span class="num">@Date.ToString("yyyy-MM-dd")</span>
+    </div>
+    <div class="big">
+        <b>@(Left >= 0 ? "Calories left" : "Calories over")</b>
+        <span class="v num @(Left < 0 ? "over" : "")">@Math.Abs(Left)</span>
+    </div>
+    <div class="bar"><i class="@(Left < 0 ? "over" : "")" style="width:@Pct.ToString("0.#", CultureInfo.InvariantCulture)%"></i></div>
+    <div class="row"><span><b>Daily budget</b></span><span class="num">@Budget</span></div>
+    <div class="row ind"><span>Base target</span><span class="num">@Plan.TargetKcal</span></div>
+    <div class="row ind"><span>Exercise credit (half of @Math.Round(Totals.ExerciseKcal))</span><span class="num">+@Totals.ExerciseCredit</span></div>
+    <div class="row"><span><b>Eaten</b></span><span class="num">@Math.Round(Totals.Kcal)</span></div>
+    <div class="row"><span><b>Protein</b> @Math.Round(Totals.Protein) g</span><span class="num">@ProteinPct% of @Plan.ProteinTargetG g</span></div>
+    <div class="row ind"><span>Carbs</span><span class="num">@Math.Round(Totals.Carbs) g</span></div>
+    <div class="row ind"><span>Fat</span><span class="num">@Math.Round(Totals.Fat) g</span></div>
+    <div class="row"><span><b>Water</b></span><span class="num">@(Water * 250) ml</span></div>
+    <div class="row">
+        <span><b>Active</b></span>
+        <span class="num">@Totals.ExerciseMinutes min@(Steps is int s ? $" · {s:N0} steps" : "")</span>
+    </div>
+    <div class="foot">Half of exercise calories are added back because watch and formula estimates usually run high.</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DateOnly Date { get; set; }
+    [Parameter, EditorRequired] public DayLog? Day { get; set; }
+    [Parameter, EditorRequired] public PlanResult Plan { get; set; } = default!;
+
+    private DayTotals Totals => Calculator.Totals(Day);
+    private int Budget => Calculator.Budget(Plan, Totals);
+    private int Left => (int)Math.Round(Budget - Totals.Kcal);
+    private double Pct => Budget <= 0 ? 0 : Math.Min(100, Totals.Kcal / Budget * 100);
+    private int ProteinPct => (int)Math.Round(Totals.Protein / Plan.ProteinTargetG * 100);
+    private int ItemCount => Day?.Foods.Count ?? 0;
+    private int Water => Day?.WaterGlasses ?? 0;
+    private int? Steps => Day?.Steps;
+}

@@ -1,0 +1,68 @@
+@* Daily weigh-ins as dots, 7-day rolling average as the line, goal as a dashed rule. *@
+@if (points.Count < 2)
+{
+    <p class="empty">Log weight on two or more days to see the chart.</p>
+}
+else
+{
+    <div class="chartbox">
+        <svg viewBox="0 0 @W @H" width="100%" role="img" aria-label="Weight over time">
+            @for (var v = lo; v <= hi; v += step)
+            {
+                <g>
+                    <line x1="@L" x2="@(W - R)" y1="@F(Y(v))" y2="@F(Y(v))" class="grid" />
+                    <text x="@(L - 6)" y="@F(Y(v) + 3)" text-anchor="end">@v</text>
+                </g>
+            }
+            <line x1="@L" x2="@(W - R)" y1="@F(Y(Goal))" y2="@F(Y(Goal))" class="goal" />
+            <text x="@(W - R)" y="@F(Y(Goal) - 4)" text-anchor="end" class="goal-label">goal @Goal.ToString(CultureInfo.InvariantCulture)</text>
+            @foreach (var p in points)
+            {
+                <circle cx="@F(X(p.Date))" cy="@F(Y(p.Kg))" r="2.5" class="dot" />
+            }
+            <path d="@AvgPath" class="avg" />
+            <circle cx="@F(X(avg[^1].Date))" cy="@F(Y(avg[^1].Kg))" r="4" class="end" />
+            <text x="@L" y="@(H - 6)">@points[0].Date.ToString("d MMM", CultureInfo.InvariantCulture)</text>
+            <text x="@(W - R)" y="@(H - 6)" text-anchor="end">@points[^1].Date.ToString("d MMM", CultureInfo.InvariantCulture)</text>
+        </svg>
+    </div>
+    <p class="foot">Dots are daily weigh-ins; the line is the 7-day average. Watch the line, not the dots.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public AppData Data { get; set; } = default!;
+
+    private const int W = 520, H = 200, L = 40, R = 10, T = 12, B = 26;
+    private record struct Pt(DateOnly Date, double Kg);
+    private List<Pt> points = [];
+    private List<Pt> avg = [];
+    private int lo, hi, step;
+    private double Goal => Data.Profile.GoalWeightKg;
+
+    protected override void OnParametersSet()
+    {
+        points = Data.Days.Where(d => d.WeightKg is not null).OrderBy(d => d.Date)
+                     .Select(d => new Pt(d.Date, d.WeightKg!.Value)).TakeLast(60).ToList();
+        if (points.Count < 2) return;
+        avg = points.Select(p =>
+        {
+            var window = points.Where(q => q.Date <= p.Date && q.Date > p.Date.AddDays(-7));
+            return new Pt(p.Date, window.Average(q => q.Kg));
+        }).ToList();
+        lo = (int)Math.Floor(Math.Min(Goal, points.Min(p => p.Kg)) - 0.5);
+        hi = (int)Math.Ceiling(points.Max(p => p.Kg) + 0.5);
+        step = Math.Max(1, (int)Math.Ceiling((hi - lo) / 5.0));
+    }
+
+    private double X(DateOnly d)
+    {
+        var span = Math.Max(1, points[^1].Date.DayNumber - points[0].Date.DayNumber);
+        return L + (d.DayNumber - points[0].Date.DayNumber) / (double)span * (W - L - R);
+    }
+
+    private double Y(double kg) => T + (hi - kg) / (hi - lo) * (H - T - B);
+
+    private static string F(double v) => v.ToString("0.0", CultureInfo.InvariantCulture);
+
+    private string AvgPath => string.Join(" ", avg.Select((p, i) => $"{(i == 0 ? "M" : "L")}{F(X(p.Date))} {F(Y(p.Kg))}"));
+}

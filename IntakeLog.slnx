@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IntakeLog.Core/IntakeLog.Core.csproj" />
+    <Project Path="src/IntakeLog.Web/IntakeLog.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IntakeLog.Core.Tests/IntakeLog.Core.Tests.csproj" />
+  </Folder>
+</Solution>

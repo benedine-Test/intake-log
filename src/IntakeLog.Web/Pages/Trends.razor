@@ -1,0 +1,43 @@
+@page "/trends"
+@inherits StateComponent
+
+<PageTitle>Trends · Intake Log</PageTitle>
+
+<section class="card">
+    <h2>Weight</h2>
+    <dl class="kv">
+        <dt>Start</dt><dd class="num">@Kg(P.StartWeightKg)</dd>
+        <dt>Latest</dt><dd class="num">@(Latest is double l ? Kg(l) : "–")</dd>
+        <dt>7-day average</dt><dd class="num">@(Avg7 is double a ? Kg(a) : "needs 3 weigh-ins")</dd>
+        <dt>Lost so far</dt><dd class="num">@(Latest is double l2 ? Kg(P.StartWeightKg - l2) : "–")</dd>
+        <dt>To goal</dt><dd class="num">@Kg(Plan.KgToGo)</dd>
+        <dt>Estimated goal date</dt><dd class="num">@(Plan.EstimatedGoalDate?.ToString("d MMM yyyy", CultureInfo.InvariantCulture) ?? "–")</dd>
+    </dl>
+    <WeightChart Data="State.Data" />
+</section>
+
+<section class="card">
+    <h2>Calories, last 14 days</h2>
+    <CalorieChart Data="State.Data" Plan="Plan" Today="AppState.Today" />
+</section>
+
+<section class="card">
+    <h2>Consistency</h2>
+    <dl class="kv">
+        <dt>Logging streak</dt><dd class="num">@Streak day@(Streak == 1 ? "" : "s")</dd>
+        <dt>Days logged, last 7</dt><dd class="num">@Week.Logged / 7</dd>
+        <dt>Days within budget, last 7</dt><dd class="num">@Week.WithinBudget / @Week.Logged</dd>
+        <dt>Active minutes this week</dt><dd class="num">@Insights.ActiveMinutesThisWeek(State.Data, AppState.Today) / @Insights.WeeklyActiveMinutesTarget</dd>
+    </dl>
+</section>
+
+@code {
+    private Profile P => State.Data.Profile;
+    private PlanResult Plan => State.Plan;
+    private double? Latest => State.Data.Days.Where(d => d.WeightKg is not null).OrderBy(d => d.Date).LastOrDefault()?.WeightKg;
+    private double? Avg7 => Insights.AverageWeight(State.Data, AppState.Today);
+    private int Streak => Insights.LoggingStreak(State.Data, AppState.Today);
+    private (int Logged, int WithinBudget) Week => Insights.LastSevenDays(State.Data, AppState.Today, Plan);
+
+    private static string Kg(double v) => v.ToString("0.00", CultureInfo.InvariantCulture) + " kg";
+}
