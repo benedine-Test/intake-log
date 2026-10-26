@@ -1,5 +1,6 @@
 ﻿@page "/"
 @inherits StateComponent
+@inject AiFoodService Ai
 
 <PageTitle>Today · Intake Log</PageTitle>
 
@@ -38,11 +39,11 @@
         }
     </div>
     <input id="food-search" type="text" placeholder="Search: chicken rice, kopi, egg…" autocomplete="off"
-           @bind="query" @bind:event="oninput" />
+           @bind="query" @bind:event="oninput" @onkeydown="OnSearchKey" />
     <div class="results">
         @if (Results.Count == 0)
         {
-            <p class="empty pad">No match. Use “Add something not on the list”.</p>
+            <p class="empty pad">@(Ai.HasKey ? "Not in your list. Ask AI below." : "No match. Use “Add something not on the list”.")</p>
         }
         @foreach (var r in Results)
         {
@@ -52,6 +53,49 @@
             </button>
         }
     </div>
+
+    @if (Ai.HasKey && Q.Length >= 2)
+    {
+        <button class="btn ghost" @onclick="AskAi" disabled="@aiBusy">@(aiBusy ? "Asking Claude…" : $"✨ Ask AI: “{Q}”")</button>
+    }
+    else if (!Ai.HasKey && Q.Length >= 2)
+    {
+        <p class="hint">Not on the list? <a href="plan">Turn on AI food search</a> to look up calories and nutrition facts for any food.</p>
+    }
+    @if (aiError is not null) { <p class="error">@aiError</p> }
+    @if (aiResults is not null)
+    {
+        <div class="ai">
+            <div class="ai-h">
+                <span>@($"AI results for “{aiAsked}”")</span>
+                <button class="link" @onclick="() => aiResults = null">Close</button>
+            </div>
+            @if (aiResults.Count == 0)
+            {
+                <p class="empty">Claude didn't recognise that as a food. Try another name.</p>
+            }
+            @foreach (var f in aiResults)
+            {
+                <div class="aifood">
+                    <div class="aifood-top">
+                        <div class="n"><b>@f.Name</b><small>@f.Serving</small></div>
+                        <div class="kc num">@Math.Round(f.Kcal)<small>kcal</small></div>
+                    </div>
+                    <dl class="nf">
+                        <div><dt>Protein</dt><dd>@G(f.Protein)</dd></div>
+                        <div><dt>Carbs</dt><dd>@G(f.Carbs)</dd></div>
+                        <div><dt>Fat</dt><dd>@G(f.Fat)</dd></div>
+                        <div><dt>Fibre</dt><dd>@G(f.Fiber)</dd></div>
+                        <div><dt>Sugar</dt><dd>@G(f.Sugar)</dd></div>
+                        <div><dt>Sodium</dt><dd>@Math.Round(f.SodiumMg) mg</dd></div>
+                    </dl>
+                    @if (f.Note.Length > 0) { <p class="hint">@f.Note</p> }
+                    <button class="btn" @onclick="() => AddAiFood(f)">Add to @State.SelectedMeal</button>
+                </div>
+            }
+            <p class="foot">AI estimates, not lab values; hawker portions vary. Added foods are saved to My foods, so next time they're one tap and free.</p>
+        </div>
+    }
 
     <button class="link" @onclick="() => customOpen = !customOpen" aria-expanded="@(customOpen ? "true" : "false")">
         @(customOpen ? "Hide custom food" : "Add something not on the list")
@@ -163,6 +207,10 @@
 
 @code {
     private string query = "";
+    private bool aiBusy;
+    private string? aiError;
+    private string? aiAsked;
+    private IReadOnlyList<AiFood>? aiResults;
     private bool customOpen;
     private string? customError;
     private CustomFood custom = new();
@@ -171,6 +219,7 @@
     private int? exKcal;
 
     private DateOnly Date => State.SelectedDate;
+    private string Q => query.Trim();
     private DayLog? Day => State.Data.Find(Date);
 
     private string DayName =>
@@ -200,6 +249,42 @@
                 ? all.Take(8).ToList()
                 : all.Where(r => r.Item.Name.Contains(q, StringComparison.OrdinalIgnoreCase)).Take(20).ToList();
         }
+    }
+
+    protected override Task OnInitializedAsync() => Ai.LoadAsync();
+
+    private static string G(double grams) => $"{grams.ToString("0.#", CultureInfo.InvariantCulture)} g";
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && Ai.HasKey) await AskAi();
+    }
+
+    private async Task AskAi()
+    {
+        if (aiBusy || Q.Length < 2) return;
+        aiBusy = true;
+        aiError = null;
+        var asked = Q;
+        var result = await Ai.SearchAsync(asked);
+        aiBusy = false;
+        aiError = result.Error;
+        aiAsked = asked;
+        aiResults = result.Error is null ? result.Foods : null;
+    }
+
+    /// <summary>Logs the food and keeps it in My foods so the same lookup isn't paid for twice.</summary>
+    private Task AddAiFood(AiFood food)
+    {
+        var item = food.ToFoodItem();
+        query = "";
+        aiResults = null;
+        return State.UpdateAsync(d =>
+        {
+            if (!d.SavedFoods.Any(f => f.Name.Equals(item.Name, StringComparison.OrdinalIgnoreCase)))
+                d.SavedFoods.Add(item);
+            d.GetOrCreate(Date).Foods.Add(FoodEntry.From(item, State.SelectedMeal));
+        });
     }
 
     private void Move(int days)

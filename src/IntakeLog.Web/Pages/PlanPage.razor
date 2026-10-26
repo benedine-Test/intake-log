@@ -1,5 +1,6 @@
 @page "/plan"
 @inherits StateComponent
+@inject AiFoodService Ai
 
 <PageTitle>My plan · Intake Log</PageTitle>
 
@@ -81,6 +82,32 @@
 </section>
 
 <section class="card">
+    <h2>AI food search</h2>
+    <p class="hint">
+        Look up calories and nutrition facts for any food by asking Claude. It uses your own API key from
+        <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>,
+        billed to your account (a few cents per search). The key is kept only in this browser and isn't included in backups.
+    </p>
+    @if (Ai.HasKey)
+    {
+        <div class="inline wrap-row">
+            <p class="ok">AI search is on.</p>
+            <button class="btn ghost" @onclick="RemoveKey">Remove key</button>
+        </div>
+    }
+    else
+    {
+        <div class="inline">
+            <label class="f">Claude API key
+                <input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-…" @bind="keyDraft" />
+            </label>
+            <button class="btn" @onclick="SaveKey">Turn on</button>
+        </div>
+    }
+    @if (keyError is not null) { <p class="error">@keyError</p> }
+</section>
+
+<section class="card">
     <h2>Backup</h2>
     <p class="hint">Your log lives only in this browser. Export a backup now and then, and import it to move to a new phone or laptop.</p>
     <div class="inline wrap-row">
@@ -114,6 +141,8 @@
     private string? pendingJson;
     private string? importMessage;
     private bool importOk;
+    private string? keyDraft;
+    private string? keyError;
 
     private Profile P => State.Data.Profile;
     private PlanResult Plan => State.Plan;
@@ -124,6 +153,19 @@
         base.OnInitialized();
         draft = Copy(P);
     }
+
+    protected override Task OnInitializedAsync() => Ai.LoadAsync();
+
+    private async Task SaveKey()
+    {
+        var key = keyDraft?.Trim() ?? "";
+        if (!key.StartsWith("sk-ant-", StringComparison.Ordinal)) { keyError = "That doesn't look like a Claude API key. It starts with sk-ant-."; return; }
+        keyError = null;
+        keyDraft = null;
+        await Ai.SetKeyAsync(key);
+    }
+
+    private Task RemoveKey() => Ai.SetKeyAsync(null);
 
     private static Profile Copy(Profile p) => new()
     {
