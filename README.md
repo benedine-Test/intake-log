@@ -7,7 +7,7 @@ A calorie, protein, exercise and weight tracker built for quick logging of Singa
 ## Features
 
 - **One-tap food logging**: about 55 Singapore staples (chicken rice, yong tau foo, kopi-O kosong, bubble tea), plus your recent and saved foods first. Half-portion steps.
-- **AI food search** (optional): ask Claude about any food not on the list and get calories, protein, carbs, fat, fibre, sugar and sodium for a typical Singapore serving. Uses your own Claude API key, entered under **My plan → AI food search**; it is stored only in this browser and left out of backups. Foods you add from AI results are saved to My foods, so repeats are free.
+- **AI food search** (optional): ask Google Gemini about any food not on the list and get calories, protein, carbs, fat, fibre, sugar and sodium for a typical Singapore serving. Uses your own free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), entered under **My plan → AI food search**; it is stored only in this browser and left out of backups. The free tier has daily limits, and Google may use free-tier searches to improve its products. Foods you add from AI results are saved to My foods, so repeats are free.
 - **Daily panel** styled like a nutrition label: calories left, protein against target, carbs, fat, water, active minutes.
 - **Exercise** with no-equipment presets (HDB stairs, brisk walk, bodyweight circuit). Calories are estimated from MET values, or you can enter your watch's number. Only half is added back to your budget.
 - **Suggestions** based on the day: how long to walk off an overage, low protein, no movement yet, weekly 150-minute target, plateau warning.

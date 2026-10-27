@@ -56,7 +56,7 @@
 
     @if (Ai.HasKey && Q.Length >= 2)
     {
-        <button class="btn ghost" @onclick="AskAi" disabled="@aiBusy">@(aiBusy ? "Asking Claude…" : $"✨ Ask AI: “{Q}”")</button>
+        <button class="btn ghost" @onclick="AskAi" disabled="@aiBusy">@(aiBusy ? "Asking Gemini…" : $"✨ Ask AI: “{Q}”")</button>
     }
     else if (!Ai.HasKey && Q.Length >= 2)
     {
@@ -72,7 +72,7 @@
             </div>
             @if (aiResults.Count == 0)
             {
-                <p class="empty">Claude didn't recognise that as a food. Try another name.</p>
+                <p class="empty">Gemini didn't recognise that as a food. Try another name.</p>
             }
             @foreach (var f in aiResults)
             {

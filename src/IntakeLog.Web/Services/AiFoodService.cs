@@ -5,12 +5,14 @@ using Microsoft.JSInterop;
 namespace IntakeLog.Web.Services;
 
 /// <summary>
-/// Sends food searches straight from the browser to the Claude API with the user's own key.
+/// Sends food searches straight from the browser to the Gemini API with the user's own free key.
 /// The key is kept in localStorage under its own name, so it never goes into exported backups.
 /// </summary>
 public sealed class AiFoodService(IJSRuntime js, HttpClient http)
 {
-    private const string KeyStorageKey = "intake-log-ai-key";
+    private const string KeyStorageKey = "intake-log-gemini-key";
+    // Held a Claude key before AI search moved to Gemini; removed on load so it isn't left behind.
+    private const string OldKeyStorageKey = "intake-log-ai-key";
 
     private readonly Dictionary<string, AiSearchResult> cache = new(StringComparer.OrdinalIgnoreCase);
     private string? apiKey;
@@ -21,7 +23,11 @@ public sealed class AiFoodService(IJSRuntime js, HttpClient http)
     public async Task LoadAsync()
     {
         if (loaded) return;
-        try { apiKey = await js.InvokeAsync<string?>("intakeLog.load", KeyStorageKey); }
+        try
+        {
+            apiKey = await js.InvokeAsync<string?>("intakeLog.load", KeyStorageKey);
+            await js.InvokeVoidAsync("intakeLog.remove", OldKeyStorageKey);
+        }
         catch (Exception) { apiKey = null; }
         loaded = true;
     }
@@ -40,18 +46,14 @@ public sealed class AiFoodService(IJSRuntime js, HttpClient http)
         query = query.Trim();
         if (query.Length == 0) return new AiSearchResult([]);
         await LoadAsync();
-        if (!HasKey) return AiSearchResult.Fail("Add your Claude API key under My plan → AI food search first.");
+        if (!HasKey) return AiSearchResult.Fail("Add your free Gemini API key under My plan → AI food search first.");
         if (cache.TryGetValue(query, out var hit)) return hit;
 
         using var request = new HttpRequestMessage(HttpMethod.Post, AiFoodSearch.Endpoint)
         {
             Content = new StringContent(AiFoodSearch.BuildRequest(query), Encoding.UTF8, "application/json")
         };
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", AiFoodSearch.ApiVersion);
-        request.Headers.Add("anthropic-beta", AiFoodSearch.FallbackBeta);
-        // Required for calls made from a web page; the key is the user's own and stays on their device.
-        request.Headers.Add("anthropic-dangerous-direct-browser-access", "true");
+        request.Headers.Add("x-goog-api-key", apiKey);
 
         AiSearchResult result;
         try
@@ -66,7 +68,7 @@ public sealed class AiFoodService(IJSRuntime js, HttpClient http)
         }
         catch (Exception)
         {
-            return AiSearchResult.Fail("Couldn't reach Claude. AI search needs an internet connection.");
+            return AiSearchResult.Fail("Couldn't reach Gemini. AI search needs an internet connection.");
         }
 
         if (result.Error is null) cache[query] = result;

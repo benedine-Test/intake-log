@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace IntakeLog.Core;
 
-/// <summary>One food Claude found for a search, with nutrition facts for the stated serving.</summary>
+/// <summary>One food the AI found for a search, with nutrition facts for the stated serving.</summary>
 public sealed record AiFood(
     string Name, string Serving, double Kcal, double Protein, double Carbs, double Fat,
     double Fiber, double Sugar, double SodiumMg, string Note)
@@ -22,17 +22,14 @@ public sealed record AiSearchResult(IReadOnlyList<AiFood> Foods, string? Error =
 }
 
 /// <summary>
-/// Builds the Claude Messages API request for a food search and reads its response.
+/// Builds the Gemini generateContent request for a food search and reads its response.
 /// No HTTP here, so it is testable; the web project sends the request.
 /// </summary>
 public static class AiFoodSearch
 {
-    public const string Endpoint = "https://api.anthropic.com/v1/messages";
-    public const string ApiVersion = "2023-06-01";
-    public const string Model = "claude-opus-5-5";
-
-    /// <summary>Lets Claude retry on another model if a safety classifier declines a harmless food query.</summary>
-    public const string FallbackBeta = "server-side-fallback-2026-07-01";
+    /// <summary>Google's alias for its current Flash model, which has a free tier.</summary>
+    public const string Model = "gemini-flash-latest";
+    public const string Endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{Model}:generateContent";
 
     public const string SystemPrompt =
         """
@@ -52,6 +49,7 @@ public static class AiFoodSearch
         If the text is not a food or drink, return an empty list.
         """;
 
+    // Gemini's responseSchema is an OpenAPI subset: no additionalProperties.
     private const string SchemaJson =
         """
         {
@@ -73,13 +71,11 @@ public static class AiFoodSearch
                   "sodium_mg": { "type": "number" },
                   "note": { "type": "string" }
                 },
-                "required": ["name", "serving", "kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg", "note"],
-                "additionalProperties": false
+                "required": ["name", "serving", "kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg", "note"]
               }
             }
           },
-          "required": ["foods"],
-          "additionalProperties": false
+          "required": ["foods"]
         }
         """;
 
@@ -88,21 +84,23 @@ public static class AiFoodSearch
     {
         var body = new JsonObject
         {
-            ["model"] = Model,
-            ["max_tokens"] = 4000,
-            ["system"] = SystemPrompt,
-            ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = query.Trim() }),
-            ["output_config"] = new JsonObject
+            ["systemInstruction"] = new JsonObject { ["parts"] = new JsonArray(new JsonObject { ["text"] = SystemPrompt }) },
+            ["contents"] = new JsonArray(new JsonObject
             {
-                ["effort"] = "low",
-                ["format"] = new JsonObject { ["type"] = "json_schema", ["schema"] = JsonNode.Parse(SchemaJson) }
-            },
-            ["fallbacks"] = "default"
+                ["role"] = "user",
+                ["parts"] = new JsonArray(new JsonObject { ["text"] = query.Trim() })
+            }),
+            ["generationConfig"] = new JsonObject
+            {
+                ["maxOutputTokens"] = 8000,
+                ["responseMimeType"] = "application/json",
+                ["responseSchema"] = JsonNode.Parse(SchemaJson)
+            }
         };
         return body.ToJsonString();
     }
 
-    /// <summary>Reads a Messages API response body (success or error) into foods or a message.</summary>
+    /// <summary>Reads a generateContent response body (success or error) into foods or a message.</summary>
     public static AiSearchResult ParseResponse(int statusCode, string body)
     {
         JsonDocument doc;
@@ -112,36 +110,50 @@ public static class AiFoodSearch
         using (doc)
         {
             var root = doc.RootElement;
-            if (statusCode is < 200 or >= 300 || Str(root, "type") == "error")
+            if (statusCode is < 200 or >= 300 || root.TryGetProperty("error", out _))
             {
                 string? detail = root.TryGetProperty("error", out var err) ? Str(err, "message") : null;
+                // An invalid key comes back as 400 INVALID_ARGUMENT, not 401.
+                if (detail?.Contains("API key", StringComparison.OrdinalIgnoreCase) == true) statusCode = 401;
                 return AiSearchResult.Fail(StatusMessage(statusCode, detail));
             }
 
-            switch (Str(root, "stop_reason"))
+            if (root.TryGetProperty("promptFeedback", out var feedback) && Str(feedback, "blockReason").Length > 0)
+                return AiSearchResult.Fail(Declined);
+
+            if (!root.TryGetProperty("candidates", out var candidates) || candidates.ValueKind != JsonValueKind.Array
+                || candidates.GetArrayLength() == 0)
+                return AiSearchResult.Fail("Gemini sent an empty answer. Try again.");
+
+            var candidate = candidates[0];
+            switch (Str(candidate, "finishReason"))
             {
-                case "refusal": return AiSearchResult.Fail("Claude declined this search. Try wording it differently.");
-                case "max_tokens": return AiSearchResult.Fail("The answer was cut off. Try a more specific search.");
+                case "" or "STOP": break;
+                case "MAX_TOKENS": return AiSearchResult.Fail("The answer was cut off. Try a more specific search.");
+                default: return AiSearchResult.Fail(Declined);
             }
 
-            if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
-                return AiSearchResult.Fail("Claude sent an empty answer. Try again.");
+            if (!candidate.TryGetProperty("content", out var content) || !content.TryGetProperty("parts", out var parts)
+                || parts.ValueKind != JsonValueKind.Array)
+                return AiSearchResult.Fail("Gemini sent an empty answer. Try again.");
 
-            var text = string.Concat(content.EnumerateArray()
-                .Where(b => Str(b, "type") == "text")
-                .Select(b => Str(b, "text")));
+            var text = string.Concat(parts.EnumerateArray()
+                .Where(p => !(p.TryGetProperty("thought", out var t) && t.ValueKind == JsonValueKind.True))
+                .Select(p => Str(p, "text")));
             return ParseFoods(text);
         }
     }
 
-    /// <summary>Reads the structured JSON Claude returns as its answer text.</summary>
+    private const string Declined = "Gemini declined this search. Try wording it differently.";
+
+    /// <summary>Reads the structured JSON Gemini returns as its answer text.</summary>
     public static AiSearchResult ParseFoods(string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("foods", out var foods) || foods.ValueKind != JsonValueKind.Array)
-                return AiSearchResult.Fail("Claude's answer wasn't in the expected format. Try again.");
+                return AiSearchResult.Fail("Gemini's answer wasn't in the expected format. Try again.");
 
             var list = new List<AiFood>();
             foreach (var f in foods.EnumerateArray())
@@ -156,15 +168,15 @@ public static class AiFoodSearch
         }
         catch (JsonException)
         {
-            return AiSearchResult.Fail("Claude's answer wasn't in the expected format. Try again.");
+            return AiSearchResult.Fail("Gemini's answer wasn't in the expected format. Try again.");
         }
     }
 
     private static string StatusMessage(int status, string? detail) => status switch
     {
         401 or 403 => "Your API key was rejected. Check it under My plan → AI food search.",
-        429 => "Too many searches right now, or your API credit has run out. Wait a minute and try again.",
-        >= 500 => "Claude is busy. Try again in a moment.",
+        429 => "Free search limit reached. Wait a minute, or try again tomorrow if the daily limit is used up.",
+        >= 500 => "Gemini is busy. Try again in a moment.",
         _ => detail is { Length: > 0 } ? $"Search failed: {detail}" : $"Search failed (HTTP {status.ToString(CultureInfo.InvariantCulture)})."
     };
 
