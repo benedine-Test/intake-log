@@ -18,6 +18,11 @@
     <button @onclick="() => Move(1)" disabled="@(Date >= AppState.Today)" aria-label="Next day">›</button>
 </div>
 
+@if (Date == AppState.Today)
+{
+    <PetCard P="Pet.For(State.Data, AppState.Today)" />
+}
+
 <FactsPanel Date="Date" Day="Day" Plan="State.Plan" />
 
 <section class="card">

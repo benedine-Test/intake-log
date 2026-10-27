@@ -1,0 +1,106 @@
+@* Mochi, the companion that grows with each day of logging. Drawn inline so it works offline. *@
+<section class="card pet mood-@P.Mood.ToString().ToLowerInvariant()" aria-label="@Pet.Name, your logging pet">
+    <div class="pet-stage">
+        <svg viewBox="0 0 120 120" role="img" aria-label="@Pet.Name: @StageName, @MoodName">
+            <ellipse class="pet-shadow" cx="60" cy="108" rx="@(18 + 4 * Level)" ry="5" />
+            <g class="pet-body" style="--s:@Scale">
+                @if (P.Stage == PetStage.Egg)
+                {
+                    <ellipse class="egg" cx="60" cy="72" rx="24" ry="30" />
+                    <path class="egg-spot" d="M48 62 q4 -4 8 0 M64 80 q4 -4 8 0" />
+                }
+                else
+                {
+                    @if (P.Stage >= PetStage.Sprout)
+                    {
+                        <path class="leaf-stem" d="M60 44 q0 -10 4 -16" />
+                        <ellipse class="leaf" cx="70" cy="26" rx="9" ry="5" transform="rotate(-25 70 26)" />
+                    }
+                    @if (P.Stage >= PetStage.Fluffball)
+                    {
+                        <ellipse class="leaf" cx="52" cy="28" rx="7" ry="4" transform="rotate(30 52 28)" />
+                    }
+                    @if (P.Stage == PetStage.Grown)
+                    {
+                        <circle class="flower" cx="61" cy="24" r="5" />
+                    }
+                    <ellipse class="blob" cx="60" cy="72" rx="30" ry="28" />
+                    <ellipse class="belly" cx="60" cy="80" rx="17" ry="13" />
+                    @if (P.Stage >= PetStage.Chick)
+                    {
+                        <ellipse class="blob wing" cx="31" cy="76" rx="6" ry="10" transform="rotate(20 31 76)" />
+                        <ellipse class="blob wing" cx="89" cy="76" rx="6" ry="10" transform="rotate(-20 89 76)" />
+                    }
+                    @switch (P.Mood)
+                    {
+                        case PetMood.Happy:
+                            <path class="eye-line" d="M45 66 q5 -6 10 0 M65 66 q5 -6 10 0" />
+                            <path class="mouth" d="M54 74 q6 6 12 0" />
+                            break;
+                        case PetMood.Hungry:
+                            <circle class="eye" cx="50" cy="65" r="4" /><circle class="eye-shine" cx="51.5" cy="63.5" r="1.3" />
+                            <circle class="eye" cx="70" cy="65" r="4" /><circle class="eye-shine" cx="71.5" cy="63.5" r="1.3" />
+                            <ellipse class="mouth-o" cx="60" cy="76" rx="3" ry="3.5" />
+                            break;
+                        default:
+                            <path class="eye-line" d="M45 66 h10 M65 66 h10" />
+                            <path class="mouth" d="M56 75 q4 2 8 0" />
+                            break;
+                    }
+                    <ellipse class="cheek" cx="42" cy="73" rx="5" ry="3" />
+                    <ellipse class="cheek" cx="78" cy="73" rx="5" ry="3" />
+                    @if (P.Stage == PetStage.Hatchling) @* eggshell still on its bottom *@
+                    {
+                        <path class="egg" d="M34 84 l8 -8 l8 8 l10 -8 l10 8 l8 -8 l8 8 v6 a26 20 0 0 1 -52 0 z" />
+                    }
+                }
+            </g>
+            @if (P.Mood == PetMood.Sleepy)
+            {
+                <path class="zzz" d="M86 28 h9 l-9 10 h9" /> @* drawn as paths: Razor reserves <text> *@
+                <path class="zzz z2" d="M98 16 h6 l-6 7 h6" />
+            }
+            @if (P.Mood == PetMood.Happy)
+            {
+                <path class="heart" d="M94 40 c0 -4 -6 -4 -6 0 c0 3 6 7 6 7 c0 0 6 -4 6 -7 c0 -4 -6 -4 -6 0z" />
+            }
+        </svg>
+    </div>
+    <div class="pet-info">
+        <h2>@Pet.Name · @StageName</h2>
+        <p>@P.Message</p>
+        <div class="bar pet-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Pct"
+             aria-label="Growth towards the next stage"><i style="width:@Pct%"></i></div>
+        <p class="hint">
+            @P.DaysFed day@(P.DaysFed == 1 ? "" : "s") fed
+            @if (P.Streak > 1) { <span> · 🔥 @P.Streak in a row</span> }
+            @if (P.NextStageAt is int n) { <span> · next stage at @n</span> }
+        </p>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PetState P { get; set; } = default!;
+
+    private int Level => (int)P.Stage;
+    private string Scale => (0.7 + 0.06 * Level).ToString("0.00", CultureInfo.InvariantCulture);
+    private int Pct => (int)Math.Round(P.Progress * 100);
+
+    private string StageName => P.Stage switch
+    {
+        PetStage.Egg => "egg",
+        PetStage.Hatchling => "just hatched",
+        PetStage.Chick => "chick",
+        PetStage.Sprout => "sprouting",
+        PetStage.Fluffball => "fluffball",
+        _ => "all grown up"
+    };
+
+    private string MoodName => P.Mood switch
+    {
+        PetMood.Happy => "happy",
+        PetMood.Hungry => "hungry",
+        PetMood.Sleepy => "napping",
+        _ => "waiting to hatch"
+    };
+}
