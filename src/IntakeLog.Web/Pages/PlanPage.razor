@@ -140,7 +140,7 @@
     {
         <div class="inline">
             <label class="f">Gemini API key
-                <input id="ai-key" type="password" autocomplete="off" placeholder="AIza…" @bind="keyDraft" />
+                <input id="ai-key" type="password" autocomplete="off" placeholder="AQ.…" @bind="keyDraft" />
             </label>
             <button class="btn" @onclick="SaveKey">Turn on</button>
         </div>
@@ -204,7 +204,12 @@
     private async Task SaveKey()
     {
         var key = keyDraft?.Trim() ?? "";
-        if (!key.StartsWith("AIza", StringComparison.Ordinal)) { keyError = "That doesn't look like a Gemini API key. It starts with AIza."; return; }
+        // AI Studio now issues "AQ." keys; older keys start with "AIza".
+        if (!key.StartsWith("AQ.", StringComparison.Ordinal) && !key.StartsWith("AIza", StringComparison.Ordinal))
+        {
+            keyError = "That doesn't look like a Gemini API key. It starts with AQ. or AIza.";
+            return;
+        }
         keyError = null;
         keyDraft = null;
         await Ai.SetKeyAsync(key);
