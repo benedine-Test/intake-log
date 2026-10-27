@@ -62,6 +62,10 @@
     @if (Ai.HasKey && Q.Length >= 2)
     {
         <button class="btn ghost" @onclick="AskAi" disabled="@aiBusy">@(aiBusy ? "Asking Gemini…" : $"✨ Ask AI: “{Q}”")</button>
+        @if (aiBusy)
+        {
+            <button class="link" @onclick="CancelAi">Cancel search</button>
+        }
     }
     else if (!Ai.HasKey && Q.Length >= 2)
     {
@@ -213,6 +217,7 @@
 @code {
     private string query = "";
     private bool aiBusy;
+    private CancellationTokenSource? aiCancel;
     private string? aiError;
     private string? aiAsked;
     private IReadOnlyList<AiFood>? aiResults;
@@ -271,12 +276,32 @@
         aiBusy = true;
         aiError = null;
         var asked = Q;
-        var result = await Ai.SearchAsync(asked);
-        aiBusy = false;
-        aiError = result.Error;
-        aiAsked = asked;
-        aiResults = result.Error is null ? result.Foods : null;
+        var cancel = aiCancel = new CancellationTokenSource();
+        try
+        {
+            var result = await Ai.SearchAsync(asked, cancel.Token);
+            aiError = result.Error;
+            aiAsked = asked;
+            aiResults = result.Error is null ? result.Foods : null;
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled by the user: go back to the search box as it was.
+        }
+        catch (Exception)
+        {
+            aiError = "AI search hit an unexpected error. Try again, or add the food yourself below.";
+        }
+        finally
+        {
+            // Always release the button so a failed search can't leave it stuck.
+            aiBusy = false;
+            cancel.Dispose();
+            aiCancel = null;
+        }
     }
+
+    private void CancelAi() => aiCancel?.Cancel();
 
     /// <summary>Logs the food and keeps it in My foods so the same lookup isn't paid for twice.</summary>
     private Task AddAiFood(AiFood food)

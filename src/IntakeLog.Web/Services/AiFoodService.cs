@@ -14,6 +14,9 @@ public sealed class AiFoodService(IJSRuntime js, HttpClient http)
     // Held a Claude key before AI search moved to Gemini; removed on load so it isn't left behind.
     private const string OldKeyStorageKey = "intake-log-ai-key";
 
+    /// <summary>Longest a search may run before the user gets an answer back instead of a spinner.</summary>
+    private static readonly TimeSpan SearchTimeout = TimeSpan.FromSeconds(30);
+
     private readonly Dictionary<string, AiSearchResult> cache = new(StringComparer.OrdinalIgnoreCase);
     private string? apiKey;
     private bool loaded;
@@ -55,16 +58,23 @@ public sealed class AiFoodService(IJSRuntime js, HttpClient http)
         };
         request.Headers.Add("x-goog-api-key", apiKey);
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(SearchTimeout);
+
         AiSearchResult result;
         try
         {
-            using var response = await http.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
+            using var response = await http.SendAsync(request, timeout.Token);
+            var body = await response.Content.ReadAsStringAsync(timeout.Token);
             result = AiFoodSearch.ParseResponse((int)response.StatusCode, body);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return AiSearchResult.Fail("Gemini took too long to answer. Try again, or add the food yourself below.");
         }
         catch (Exception)
         {
